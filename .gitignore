@@ -12,11 +12,13 @@ backend/dist/
 backend/lambda.zip
 backend/node_modules/
 backend/coverage/
+backend/package-lock.json
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
 frontend/.env
+frontend/package-lock.json
 
 # Environment files
 .env
