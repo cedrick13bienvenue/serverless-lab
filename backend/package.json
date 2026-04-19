@@ -1,0 +1,32 @@
+{
+  "name": "serverless-task-mgmt-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/functions/**/*.ts --bundle --platform=node --target=node20 --outdir=dist --out-extension:.js=.js --external:@aws-sdk/*",
+    "build:watch": "npm run build -- --watch",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.0.0",
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/client-lambda": "^3.1032.0",
+    "@aws-sdk/client-ses": "^3.0.0",
+    "@aws-sdk/lib-dynamodb": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.140",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.4",
+    "typescript": "^5.4.0"
+  }
+}
