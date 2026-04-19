@@ -1,0 +1,27 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+infra/backend/.terraform/
+infra/backend/*.tfstate
+
+# Lambda build artifacts
+backend/dist/
+backend/lambda.zip
+backend/node_modules/
+backend/coverage/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Environment files
+.env
+*.env.local
+
+# Misc
+.DS_Store
+*.log
