@@ -9,7 +9,11 @@ export function getClaims(
     sub: claims["sub"] as string,
     email: claims["email"] as string,
     "cognito:groups": claims["cognito:groups"]
-      ? (claims["cognito:groups"] as string).split(",")
+      ? (claims["cognito:groups"] as string)
+          .replace(/^\[|\]$/g, "")
+          .split(",")
+          .map((g) => g.trim())
+          .filter(Boolean)
       : [],
   };
 }
