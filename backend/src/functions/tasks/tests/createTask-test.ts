@@ -8,11 +8,11 @@ jest.mock("../../../utils/dynamo", () => ({
 }));
 
 const makeEvent = (
-  body: object,
+  body: object | null,
   groups: string[] = ["Admins"]
 ): APIGatewayProxyEventV2WithJWTAuthorizer =>
   ({
-    body: JSON.stringify(body),
+    body: body !== null ? JSON.stringify(body) : undefined,
     pathParameters: {},
     requestContext: {
       authorizer: {
@@ -55,5 +55,23 @@ describe("createTask", () => {
   it("returns 400 when body is empty", async () => {
     const result = await handler(makeEvent({}));
     expect((result as any).statusCode).toBe(400);
+  });
+
+  it("returns 400 when body is null/undefined (defaults to empty object)", async () => {
+    const result = await handler(makeEvent(null));
+    expect((result as any).statusCode).toBe(400);
+  });
+
+  it("returns 403 when user has no cognito groups", async () => {
+    // groups = [] → "cognito:groups": "" → treated as Member → forbidden
+    const result = await handler(makeEvent({ title: "T", description: "D" }, []));
+    expect((result as any).statusCode).toBe(403);
+  });
+
+  it("returns 500 when dynamo throws", async () => {
+    const { dynamo } = jest.requireMock("../../../utils/dynamo");
+    (dynamo.send as jest.Mock).mockRejectedValueOnce(new Error("DB failure"));
+    const result = await handler(makeEvent({ title: "T", description: "D" }));
+    expect((result as any).statusCode).toBe(500);
   });
 });

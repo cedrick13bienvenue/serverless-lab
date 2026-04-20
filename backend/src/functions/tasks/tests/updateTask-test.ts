@@ -27,13 +27,14 @@ const existingTask = {
 };
 
 const makeEvent = (
-  body: object,
+  body: object | null,
   groups: string[] = ["Admins"],
-  sub = "admin-1"
+  sub = "admin-1",
+  taskId: string | null = "task-1"
 ): APIGatewayProxyEventV2WithJWTAuthorizer =>
   ({
-    body: JSON.stringify(body),
-    pathParameters: { taskId: "task-1" },
+    body: body !== null ? JSON.stringify(body) : undefined,
+    pathParameters: taskId ? { taskId } : {},
     requestContext: {
       authorizer: {
         jwt: {
@@ -86,5 +87,49 @@ describe("updateTask", () => {
     mockSend.mockResolvedValueOnce({ Item: undefined });
     const result = await handler(makeEvent({ status: "DONE" }));
     expect((result as any).statusCode).toBe(404);
+  });
+
+  it("admin providing an invalid status gets 400", async () => {
+    mockSend.mockReset();
+    mockSend.mockResolvedValueOnce({ Item: existingTask });
+    const result = await handler(makeEvent({ status: "INVALID_STATUS" }));
+    expect((result as any).statusCode).toBe(400);
+  });
+
+  it("returns 400 when taskId is missing", async () => {
+    const result = await handler(makeEvent({ status: "IN_PROGRESS" }, ["Admins"], "admin-1", null));
+    expect((result as any).statusCode).toBe(400);
+  });
+
+  it("member gets 400 when body has no status field", async () => {
+    mockSend.mockReset();
+    mockSend.mockResolvedValueOnce({ Item: existingTask });
+    const result = await handler(makeEvent({}, ["Members"], "member-1"));
+    expect((result as any).statusCode).toBe(400);
+  });
+
+  it("admin can update only title without status", async () => {
+    mockSend.mockReset();
+    mockSend
+      .mockResolvedValueOnce({ Item: existingTask })
+      .mockResolvedValueOnce({ Attributes: { ...existingTask, title: "New title" } });
+    const result = await handler(makeEvent({ title: "New title" }));
+    expect((result as any).statusCode).toBe(200);
+  });
+
+  it("admin update with null body defaults to empty object", async () => {
+    mockSend.mockReset();
+    mockSend
+      .mockResolvedValueOnce({ Item: existingTask })
+      .mockResolvedValueOnce({ Attributes: existingTask });
+    const result = await handler(makeEvent(null));
+    expect((result as any).statusCode).toBe(200);
+  });
+
+  it("returns 500 when dynamo throws", async () => {
+    mockSend.mockReset();
+    mockSend.mockRejectedValueOnce(new Error("DB failure"));
+    const result = await handler(makeEvent({ status: "IN_PROGRESS" }));
+    expect((result as any).statusCode).toBe(500);
   });
 });
