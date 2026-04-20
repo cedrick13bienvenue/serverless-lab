@@ -31,7 +31,8 @@ module "dynamodb" {
 
 module "cognito" {
   source                = "./modules/cognito"
-  pre_signup_lambda_arn = module.lambda.pre_signup_lambda_arn
+  pre_signup_lambda_arn        = module.lambda.pre_signup_lambda_arn
+  post_confirmation_lambda_arn = module.lambda.post_confirmation_lambda_arn
   ses_from_email        = var.ses_from_email
 }
 
@@ -49,7 +50,6 @@ module "lambda" {
   ses_from_email     = var.ses_from_email
   region             = var.region
   account_id         = data.aws_caller_identity.current.account_id
-  user_pool_id       = module.cognito.user_pool_id
 }
 
 module "api_gateway" {

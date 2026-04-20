@@ -27,7 +27,8 @@ resource "aws_cognito_user_pool" "main" {
 
   # Pre-signup Lambda blocks non-approved domains before the user is created
   lambda_config {
-    pre_sign_up = var.pre_signup_lambda_arn
+    pre_sign_up       = var.pre_signup_lambda_arn
+    post_confirmation = var.post_confirmation_lambda_arn
   }
 
   account_recovery_setting {
@@ -82,6 +83,15 @@ resource "aws_lambda_permission" "cognito_pre_signup" {
   statement_id  = "AllowCognitoPreSignup"
   action        = "lambda:InvokeFunction"
   function_name = var.pre_signup_lambda_arn
+  principal     = "cognito-idp.amazonaws.com"
+  source_arn    = aws_cognito_user_pool.main.arn
+}
+
+# Allow Cognito to call the post-confirmation Lambda
+resource "aws_lambda_permission" "cognito_post_confirmation" {
+  statement_id  = "AllowCognitoPostConfirmation"
+  action        = "lambda:InvokeFunction"
+  function_name = var.post_confirmation_lambda_arn
   principal     = "cognito-idp.amazonaws.com"
   source_arn    = aws_cognito_user_pool.main.arn
 }
