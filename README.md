@@ -213,17 +213,7 @@ All endpoints require a valid Cognito JWT in the `Authorization` header. Request
 
 ## Usage
 
-### Step 1 — Verify AWS credentials
-
-```bash
-aws sts get-caller-identity
-```
-
-![AWS CLI Identity](screenshoots/01-aws-cli-identity.png)
-
----
-
-### Step 2 — Run tests and build Lambda bundle
+### Step 1 — Run tests and build Lambda bundle
 
 ```bash
 cd backend
@@ -231,7 +221,7 @@ npm install
 npm test
 ```
 
-![Tests Passing](screenshoots/02-tests-passing.png)
+![Tests Passing](screenshoots/01-tests-passing.png)
 
 ```bash
 npm run build
@@ -249,7 +239,7 @@ terraform apply
 
 Type `yes`.
 
-![Backend Terraform Apply](screenshoots/03-backend-terraform-apply.png)
+![Backend Terraform Apply](screenshoots/02-backend-terraform-apply.png)
 
 ---
 
@@ -263,7 +253,7 @@ terraform apply -var="ses_from_email=your@amalitech.com"
 
 Type `yes`. This creates Cognito, DynamoDB, all Lambdas, API Gateway, and SES identity.
 
-![Main Terraform Apply](screenshoots/04-main-terraform-apply.png)
+![Main Terraform Apply](screenshoots/03-main-terraform-apply.png)
 
 Copy the three output values into `frontend/.env`:
 
@@ -272,6 +262,8 @@ api_gateway_url       = "https://xxxxxxxxxx.execute-api.eu-west-1.amazonaws.com"
 cognito_user_pool_id  = "eu-west-1_XXXXXXXXX"
 cognito_client_id     = "xxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
+
+![Terraform Outputs](screenshoots/04-terraform-outputs.png)
 
 ---
 
@@ -370,7 +362,11 @@ The member updates the task to `IN_PROGRESS`. All other assigned members receive
 
 Push to GitHub, connect to Amplify, add the three env vars, deploy.
 
-![Amplify Live](screenshoots/14-amplify-live.png)
+![Amplify Build](screenshoots/14-amplify-build.png)
+
+Once the build completes, open the Amplify-provided URL in your browser.
+
+![Amplify Live](screenshoots/15-amplify-live.png)
 
 ---
 
