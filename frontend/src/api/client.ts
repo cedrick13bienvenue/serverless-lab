@@ -3,7 +3,7 @@ import { fetchAuthSession } from "aws-amplify/auth";
 const API_URL = import.meta.env.VITE_API_URL as string;
 
 async function getToken(): Promise<string> {
-  const session = await fetchAuthSession();
+  const session = await fetchAuthSession({ forceRefresh: true });
   return session.tokens?.accessToken?.toString() ?? "";
 }
 

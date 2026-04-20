@@ -15,7 +15,7 @@ export function useCurrentUser(): CurrentUser {
   });
 
   useEffect(() => {
-    fetchAuthSession().then((session) => {
+    fetchAuthSession({ forceRefresh: true }).then((session) => {
       const payload = session.tokens?.idToken?.payload;
       if (!payload) return;
 
