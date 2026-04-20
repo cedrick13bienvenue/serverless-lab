@@ -34,6 +34,7 @@ resource "aws_apigatewayv2_stage" "default" {
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gw.arn
+    format          = "$context.requestId $context.status $context.routeKey $context.error.message"
   }
 }
 
@@ -44,6 +45,7 @@ resource "aws_cloudwatch_log_group" "api_gw" {
 
 locals {
   routes = {
+    "GET /users"              = "get_users"
     "POST /tasks"             = "create_task"
     "GET /tasks"              = "get_tasks"
     "GET /tasks/{taskId}"     = "get_task"
@@ -76,7 +78,7 @@ resource "aws_apigatewayv2_route" "routes" {
 resource "aws_lambda_permission" "api_gw" {
   for_each = local.routes
 
-  statement_id  = "AllowAPIGatewayInvoke-${replace(replace(each.key, " ", "-"), "/", "-")}"
+  statement_id  = "AllowAPIGatewayInvoke-${replace(each.key, "/[^a-zA-Z0-9_-]/", "-")}"
   action        = "lambda:InvokeFunction"
   function_name = var.lambda_arns[each.value]
   principal     = "apigateway.amazonaws.com"

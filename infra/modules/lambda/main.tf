@@ -9,14 +9,14 @@ locals {
     assign_task      = { handler = "tasks/assignTask.handler",       description = "Admin: assign task to members" }
     delete_task      = { handler = "tasks/deleteTask.handler",       description = "Admin: close/delete a task" }
     notify           = { handler = "notifications/notify.handler",   description = "Send SES emails on assignment/status change" }
+    get_users        = { handler = "users/getUsers.handler",          description = "Admin: list all users" }
   }
 
   common_env = {
-    TASKS_TABLE  = var.tasks_table_name
-    USERS_TABLE  = var.users_table_name
-    SES_FROM     = var.ses_from_email
-    REGION       = var.region
-    USER_POOL_ID = var.user_pool_id
+    TASKS_TABLE = var.tasks_table_name
+    USERS_TABLE = var.users_table_name
+    SES_FROM    = var.ses_from_email
+    REGION      = var.region
   }
 }
 
@@ -78,7 +78,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "cognito-idp:AdminListGroupsForUser",
           "cognito-idp:ListUsersInGroup",
         ]
-        Resource = "arn:aws:cognito-idp:${var.region}:${var.account_id}:userpool/${var.user_pool_id}"
+        Resource = "arn:aws:cognito-idp:${var.region}:${var.account_id}:userpool/*"
       },
       {
         Sid    = "CloudWatchLogs"
