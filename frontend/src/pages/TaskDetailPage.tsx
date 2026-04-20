@@ -4,6 +4,12 @@ import { api } from "../api/client";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import type { Task, TaskStatus } from "../types";
 
+interface User {
+  userId: string;
+  email: string;
+  status: string;
+}
+
 const MEMBER_STATUSES: TaskStatus[] = ["IN_PROGRESS", "DONE"];
 const ADMIN_STATUSES: TaskStatus[] = ["OPEN", "IN_PROGRESS", "DONE", "CLOSED"];
 
@@ -13,7 +19,8 @@ export default function TaskDetailPage() {
   const { role, userId } = useCurrentUser();
   const [task, setTask] = useState<Task | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<TaskStatus>("OPEN");
-  const [assignInput, setAssignInput] = useState("");
+  const [users, setUsers] = useState<User[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -29,6 +36,15 @@ export default function TaskDetailPage() {
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, [taskId]);
+
+  useEffect(() => {
+    if (role === "Admin") {
+      api
+        .get<{ users: User[] }>("/users")
+        .then((res) => setUsers(res.users.filter((u) => u.status === "ACTIVE")))
+        .catch(() => {});
+    }
+  }, [role]);
 
   const handleStatusUpdate = async () => {
     if (!task) return;
@@ -48,14 +64,13 @@ export default function TaskDetailPage() {
   };
 
   const handleAssign = async () => {
-    if (!task || !assignInput.trim()) return;
-    const userIds = assignInput.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!task || selectedUsers.length === 0) return;
     setSaving(true);
     setError("");
     try {
-      const updated = await api.patch<Task>(`/tasks/${task.taskId}/assign`, { userIds });
+      const updated = await api.patch<Task>(`/tasks/${task.taskId}/assign`, { userIds: selectedUsers });
       setTask(updated);
-      setAssignInput("");
+      setSelectedUsers([]);
       setSuccess("Members assigned.");
     } catch (err: unknown) {
       setError((err as Error).message);
@@ -104,17 +119,36 @@ export default function TaskDetailPage() {
         <>
           <hr />
           <h3>Assign Members</h3>
-          <p style={{ fontSize: 12, color: "#666" }}>
-            Enter user IDs separated by commas
-          </p>
-          <input
-            value={assignInput}
-            onChange={(e) => setAssignInput(e.target.value)}
-            placeholder="user-id-1, user-id-2"
-            style={{ width: "100%", padding: "0.4rem" }}
-          />
-          <button onClick={handleAssign} disabled={saving} style={{ marginTop: 8 }}>
-            {saving ? "Assigning…" : "Assign"}
+          {users.length === 0 ? (
+            <p style={{ fontSize: 12, color: "#666" }}>No active users found.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {users
+                .filter((u) => !task.assignedTo.includes(u.userId))
+                .map((u) => (
+                  <label key={u.userId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedUsers.includes(u.userId)}
+                      onChange={(e) =>
+                        setSelectedUsers((prev) =>
+                          e.target.checked
+                            ? [...prev, u.userId]
+                            : prev.filter((id) => id !== u.userId)
+                        )
+                      }
+                    />
+                    {u.email}
+                  </label>
+                ))}
+            </div>
+          )}
+          <button
+            onClick={handleAssign}
+            disabled={saving || selectedUsers.length === 0}
+            style={{ marginTop: 8 }}
+          >
+            {saving ? "Assigning…" : `Assign (${selectedUsers.length} selected)`}
           </button>
         </>
       )}
