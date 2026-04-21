@@ -10,7 +10,7 @@ set -euo pipefail
 #   ./scripts/promote-admin.sh <email>
 #
 # Example:
-#   ./scripts/promote-admin.sh bienvenue.cedric@amalitech.com
+#   ./scripts/promote-admin.sh username@amalitech.com
 # ---------------------------------------------------------------------------
 
 DEFAULT_EMAIL="bienvenue.cedric@amalitech.com"
