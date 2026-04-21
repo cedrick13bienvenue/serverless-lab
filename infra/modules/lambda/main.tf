@@ -81,6 +81,12 @@ resource "aws_iam_role_policy" "lambda_policy" {
         Resource = "arn:aws:cognito-idp:${var.region}:${var.account_id}:userpool/*"
       },
       {
+        Sid      = "InvokeLambda"
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = "arn:aws:lambda:${var.region}:${var.account_id}:function:task-mgmt-*"
+      },
+      {
         Sid    = "CloudWatchLogs"
         Effect = "Allow"
         Action = [
