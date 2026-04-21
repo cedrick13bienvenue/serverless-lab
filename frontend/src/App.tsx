@@ -5,6 +5,7 @@ import TaskListPage from "./pages/TaskListPage";
 import TaskDetailPage from "./pages/TaskDetailPage";
 import CreateTaskPage from "./pages/CreateTaskPage";
 import { useCurrentUser } from "./hooks/useCurrentUser";
+import { ThemeProvider } from "./context/ThemeContext";
 
 function AuthenticatedApp() {
   const { role } = useCurrentUser();
@@ -25,8 +26,23 @@ function AuthenticatedApp() {
 
 export default function App() {
   return (
-    <Authenticator>
-      {() => <AuthenticatedApp />}
-    </Authenticator>
+    <ThemeProvider>
+      <Authenticator
+        signUpAttributes={["name"]}
+        formFields={{
+          signUp: {
+            name: { label: "Full Name", placeholder: "John Doe", order: 1 },
+            email: { order: 2 },
+            password: { order: 3 },
+            confirm_password: { order: 4 },
+          },
+          signIn: {
+            username: { label: "Email", placeholder: "Enter your email" },
+          },
+        }}
+      >
+        {() => <AuthenticatedApp />}
+      </Authenticator>
+    </ThemeProvider>
   );
 }
