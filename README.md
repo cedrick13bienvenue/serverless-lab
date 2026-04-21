@@ -2,61 +2,12 @@
 
 ## Overview
 
-This lab solves a core organizational problem: **how do teams assign, track, and communicate task progress without managing any servers?**
+A production-grade serverless task management system built on AWS. Teams can create tasks, assign them to members, and receive automatic email notifications on assignment and status changes — with zero servers to manage.
 
-In manual workflows, tasks live in spreadsheets, assignments are sent over Slack, and nobody knows when a colleague updates a status unless they check. This system replaces all of that with a cloud-native, event-driven architecture where:
-
-- Tasks are created, assigned, and tracked via a secure REST API
-- The right people are notified automatically at the right moment via email
-- Access is enforced by role — admins manage, members execute
-- Everything scales to zero when idle — no EC2, no containers, no idle cost
-
----
-
-## Objectives
-
-- Deploy a serverless REST API using API Gateway HTTP API + Lambda (Node.js 20 / TypeScript)
-- Store tasks and users in DynamoDB with proper access patterns
-- Authenticate users via Cognito with mandatory email verification and domain allowlisting
-- Send automated SES email notifications on task assignment and status changes
-- Enforce RBAC: Admins create/assign/close tasks; Members view and update status only
-- Host the React frontend on AWS Amplify with Cognito-protected routes
-- Provision all infrastructure with Terraform (modular, remote backend)
-
----
-
-## Tools & Versions
-
-| Tool              | Version / Detail                  |
-|-------------------|-----------------------------------|
-| Terraform         | >= 1.5.0                          |
-| AWS Provider      | ~> 5.0                            |
-| Node.js (Lambda)  | 20.x                              |
-| TypeScript        | ^5.4.0                            |
-| React             | ^18.3.0                           |
-| Vite              | ^5.3.0                            |
-| AWS Amplify UI    | ^6.0.0                            |
-| esbuild           | ^0.20.0 (Lambda bundler)          |
-| Jest + ts-jest    | ^29.7.0                           |
-| Region            | eu-west-1                         |
-| OS (local)        | macOS                             |
-
----
-
-## Problem This Lab Solves
-
-Organizations managing distributed work face four recurring failures:
-
-- **No single source of truth** — tasks scattered across Slack, email, and spreadsheets
-- **No role enforcement** — anyone can accidentally overwrite anything
-- **No audit trail** — no record of who changed what status and when
-- **Silent updates** — teammates don't know a task changed unless they check
-
-This system addresses all four:
-- DynamoDB is the single store — every task mutation goes through the API
-- RBAC is enforced in Lambda using Cognito JWT group claims — members physically cannot hit admin endpoints without a 403
-- DynamoDB `updatedAt` timestamps and Cognito `createdBy` fields create an implicit audit trail
-- SES notifications fire asynchronously on every assignment and status change — the right people are always informed
+- Tasks created, assigned, and tracked via a secure REST API
+- Role-based access control: Admins manage, Members execute
+- Automatic SES email notifications on assignment and status changes
+- All infrastructure provisioned with Terraform — deploy and tear down in minutes
 
 ---
 
@@ -65,40 +16,39 @@ This system addresses all four:
 ```
 BROWSER (React + Amplify UI)
 │
-│  Cognito-hosted UI or Amplify Authenticator component
-│  ├── Signup blocked at Cognito pre-signup Lambda if email not @amalitech.com
-│  │   or @amalitechtraining.org
-│  ├── Email verification mandatory before first login
-│  └── Users placed in Admins or Members Cognito group
+│  Amplify Authenticator (Cognito-backed)
+│  ├── Pre-signup Lambda blocks non-approved email domains
+│  ├── Email verification required before first login
+│  └── Role assigned via Cognito group (Admins / Members)
 │
-│  JWT access token in Authorization header
+│  JWT access token in Authorization header on every API call
 │
 ▼
 API GATEWAY (HTTP API)
-├── JWT Authorizer — Cognito User Pool
-│   └── Rejects all requests without a valid access token (401)
+├── JWT Authorizer → rejects requests without valid Cognito token (401)
 │
-├── POST   /tasks                  → create_task Lambda   (Admin only)
-├── GET    /tasks                  → get_tasks Lambda     (Admin: all | Member: assigned)
-├── GET    /tasks/{taskId}         → get_task Lambda      (Admin: any | Member: assigned only)
-├── PUT    /tasks/{taskId}         → update_task Lambda   (Admin: full | Member: status only)
-├── PATCH  /tasks/{taskId}/assign  → assign_task Lambda   (Admin only)
-└── DELETE /tasks/{taskId}         → delete_task Lambda   (Admin only — soft close)
-                │
-                ▼
-         LAMBDA (Node.js 20 / TypeScript)
-         ├── RBAC checked from JWT claims (cognito:groups)
-         ├── DynamoDB operations (tasks table + users table)
-         └── Async invoke → notify Lambda → SES emails
-                │
-                ▼
-         DYNAMODB (PAY_PER_REQUEST)
-         ├── tasks table  — taskId (PK), status GSI
-         └── users table  — userId (PK), email GSI
+├── POST   /tasks                  → create_task Lambda    (Admin only)
+├── GET    /tasks                  → get_tasks Lambda      (Admin: all | Member: assigned)
+├── GET    /tasks/{taskId}         → get_task Lambda       (Admin: any | Member: assigned)
+├── PUT    /tasks/{taskId}         → update_task Lambda    (Admin: full | Member: status only)
+├── PATCH  /tasks/{taskId}/assign  → assign_task Lambda    (Admin only)
+├── DELETE /tasks/{taskId}         → delete_task Lambda    (Admin only — soft close)
+└── GET    /users                  → get_users Lambda      (Admin only)
+              │
+              ▼
+       LAMBDA (Node.js 20 / TypeScript)
+       ├── RBAC checked from JWT claims (cognito:groups)
+       ├── DynamoDB operations (tasks + users tables)
+       └── Async invoke → notify Lambda → SES emails
+              │
+              ▼
+       DYNAMODB (PAY_PER_REQUEST)
+       ├── tasks  — taskId (PK)
+       └── users  — userId (PK)
 
-         SES (email notifications)
-         ├── On TASK_ASSIGNED  → email each newly assigned member
-         └── On STATUS_CHANGE  → email all assigned members except the one who changed it
+       SES (email notifications)
+       ├── TASK_ASSIGNED  → email each newly assigned member
+       └── STATUS_CHANGE  → email task creator + all assigned members (except who changed it)
 ```
 
 ---
@@ -108,110 +58,95 @@ API GATEWAY (HTTP API)
 ```
 serverless-lab/
 ├── infra/
-│   ├── backend/                 # Stage 1 — S3 + DynamoDB for remote state (local state)
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   └── outputs.tf
-│   ├── modules/
-│   │   ├── cognito/             # User pool, groups, pre-signup trigger, app client
-│   │   ├── dynamodb/            # tasks + users tables (PAY_PER_REQUEST, PITR on)
-│   │   ├── lambda/              # IAM role, all 9 functions packaged from backend/dist
-│   │   ├── api-gateway/         # HTTP API, JWT authorizer, routes, Lambda permissions
-│   │   └── ses/                 # SES email identity verification
-│   ├── main.tf                  # Root module — wires all modules, remote backend
-│   ├── variables.tf
-│   └── outputs.tf               # API URL, Cognito IDs (copy to frontend .env)
-├── backend/                     # Lambda functions (TypeScript)
-│   ├── src/
-│   │   ├── functions/
-│   │   │   ├── auth/
-│   │   │   │   ├── preSignup.ts        # Blocks non-approved domains at signup
-│   │   │   │   ├── postConfirmation.ts # Syncs verified user into DynamoDB users table
-│   │   │   │   └── tests/
-│   │   │   │       └── preSignup-test.ts
-│   │   │   ├── tasks/
-│   │   │   │   ├── createTask.ts       # Admin only
-│   │   │   │   ├── getTasks.ts         # Admin: all tasks | Member: assigned only
-│   │   │   │   ├── getTask.ts          # Single task, member must be in assignedTo
-│   │   │   │   ├── updateTask.ts       # Admin: full update | Member: status only
-│   │   │   │   ├── assignTask.ts       # Admin only, prevents duplicates
-│   │   │   │   ├── deleteTask.ts       # Soft-close: status → CLOSED
-│   │   │   │   └── tests/
-│   │   │   │       ├── createTask-test.ts
-│   │   │   │       └── updateTask-test.ts
-│   │   │   └── notifications/
-│   │   │       └── notify.ts           # SES email dispatch (async invocation)
-│   │   ├── middleware/
-│   │   │   └── rbac.ts                 # JWT claim extraction + role resolution
-│   │   ├── types/index.ts              # Task, User, TaskStatus, JwtClaims
-│   │   └── utils/
-│   │       ├── dynamo.ts               # Shared DynamoDB document client
-│   │       └── response.ts             # HTTP response helpers (ok, forbidden, etc.)
-│   ├── jest.config.js
-│   ├── package.json
-│   └── tsconfig.json
-├── frontend/                    # React 18 + Vite + Amplify UI
-│   ├── src/
-│   │   ├── api/client.ts            # Typed fetch wrapper (attaches JWT automatically)
-│   │   ├── hooks/useCurrentUser.ts  # Reads Cognito session → userId, email, role
-│   │   ├── pages/
-│   │   │   ├── TaskListPage.tsx     # Table view; admin sees all, member sees assigned
-│   │   │   ├── TaskDetailPage.tsx   # Status update + assign panel (admin only)
-│   │   │   └── CreateTaskPage.tsx   # Admin-only new task form
-│   │   ├── types/index.ts
-│   │   ├── App.tsx                  # Authenticator wrapper + role-aware routing
-│   │   └── main.tsx                 # Amplify.configure + ReactDOM.render
-│   ├── amplify.yml              # Amplify build spec
-│   ├── vite.config.ts
-│   ├── tsconfig.json
-│   └── .env.example
-├── screenshoots/                # Evidence screenshots
-├── .gitignore
+│   ├── backend/          # Stage 1 — S3 bucket + DynamoDB table for Terraform remote state
+│   └── modules/
+│       ├── cognito/      # User pool, groups, pre-signup + postConfirmation triggers
+│       ├── dynamodb/     # tasks + users tables (PAY_PER_REQUEST, PITR enabled)
+│       ├── lambda/       # IAM role + all 10 Lambda functions
+│       ├── api-gateway/  # HTTP API, JWT authorizer, routes, Lambda permissions
+│       └── ses/          # SES email identity resource
+├── backend/              # Lambda source (TypeScript)
+│   └── src/
+│       ├── functions/
+│       │   ├── auth/
+│       │   │   ├── preSignup.ts         # Blocks non-approved domains at signup
+│       │   │   └── postConfirmation.ts  # Syncs verified user into DynamoDB users table
+│       │   ├── tasks/
+│       │   │   ├── createTask.ts
+│       │   │   ├── getTasks.ts
+│       │   │   ├── getTask.ts
+│       │   │   ├── updateTask.ts        # Triggers STATUS_CHANGE notification
+│       │   │   ├── assignTask.ts        # Triggers TASK_ASSIGNED notification
+│       │   │   └── deleteTask.ts        # Soft-close: status → CLOSED
+│       │   ├── notifications/
+│       │   │   └── notify.ts            # SES dispatch (async fire-and-forget)
+│       │   └── users/
+│       │       └── getUsers.ts          # Admin: list all active users
+│       ├── middleware/rbac.ts           # JWT claim extraction + group-based role check
+│       └── utils/
+│           ├── dynamo.ts               # Shared DynamoDB document client
+│           └── response.ts             # HTTP response helpers
+├── frontend/             # React 18 + Vite + Amplify UI
+│   └── src/
+│       ├── api/client.ts               # Typed fetch wrapper (attaches JWT automatically)
+│       ├── context/ThemeContext.tsx    # Dark mode state (persisted to localStorage)
+│       ├── hooks/useCurrentUser.ts     # Reads Cognito session → userId, role
+│       └── pages/
+│           ├── TaskListPage.tsx        # Task table with status badges + dark mode toggle
+│           ├── TaskDetailPage.tsx      # Status update, member assignment, close task
+│           └── CreateTaskPage.tsx      # Admin-only new task form
+├── scripts/
+│   ├── promote-admin.sh               # Promote a user to Admins group
+│   └── set-notification-email.sh      # Set where notification emails are delivered
+├── screenshots/          # Evidence screenshots
 └── README.md
 ```
 
 ---
 
+## Tools & Versions
+
+| Tool             | Version         |
+|------------------|-----------------|
+| Terraform        | >= 1.5.0        |
+| AWS Provider     | ~> 5.0          |
+| Node.js (Lambda) | 20.x            |
+| TypeScript       | ^5.4.0          |
+| React            | ^18.3.0         |
+| Vite             | ^5.3.0          |
+| Amplify UI       | ^6.0.0          |
+| esbuild          | ^0.20.0         |
+| Jest + ts-jest   | ^29.7.0         |
+| Region           | eu-west-1       |
+
+---
+
 ## API Endpoints
 
-| Method | Path                          | Role         | Description                                      |
-|--------|-------------------------------|--------------|--------------------------------------------------|
-| POST   | `/tasks`                      | Admin        | Create a new task                                |
-| GET    | `/tasks`                      | Admin/Member | Admin: all tasks. Member: assigned only          |
-| GET    | `/tasks/{taskId}`             | Admin/Member | Get single task (member must be assigned)        |
-| PUT    | `/tasks/{taskId}`             | Admin/Member | Admin: full update. Member: status only          |
-| PATCH  | `/tasks/{taskId}/assign`      | Admin        | Assign member(s) to a task                       |
-| DELETE | `/tasks/{taskId}`             | Admin        | Soft-close a task (status → CLOSED)              |
+| Method | Path                         | Role         | Description                                  |
+|--------|------------------------------|--------------|----------------------------------------------|
+| POST   | `/tasks`                     | Admin        | Create a new task                            |
+| GET    | `/tasks`                     | Admin/Member | Admin: all tasks. Member: assigned only      |
+| GET    | `/tasks/{taskId}`            | Admin/Member | Get single task                              |
+| PUT    | `/tasks/{taskId}`            | Admin/Member | Admin: full update. Member: status only      |
+| PATCH  | `/tasks/{taskId}/assign`     | Admin        | Assign member(s) to a task                   |
+| DELETE | `/tasks/{taskId}`            | Admin        | Soft-close task (status → CLOSED)            |
+| GET    | `/users`                     | Admin        | List all active users                        |
 
-All endpoints require a valid Cognito JWT in the `Authorization` header. Requests without a valid token are rejected by the API Gateway JWT authorizer before they reach Lambda.
-
----
-
-## Security Considerations
-
-- **Domain allowlisting at signup** — Cognito pre-signup Lambda throws an error for any email not ending in `@amalitech.com` or `@amalitechtraining.org`. The user record is never created.
-- **Email verification** — `auto_verified_attributes = ["email"]` + `CONFIRM_WITH_CODE` — unverified users cannot authenticate.
-- **JWT authorizer** — every API Gateway route uses a Cognito JWT authorizer. No Lambda is ever invoked without a valid token.
-- **RBAC in Lambda** — role is read from `cognito:groups` in the JWT payload. Group membership is managed server-side in Cognito — a client cannot forge it. Members physically cannot reach admin-only code paths.
-- **Least-privilege IAM** — the Lambda execution role grants only what's needed: DynamoDB CRUD on the two tables, SES `SendEmail`, Cognito read-only for group lookups, and CloudWatch Logs.
-- **Soft deletes** — tasks are never hard-deleted. Status is set to `CLOSED`, preserving the audit trail.
-- **Duplicate assignment prevention** — `assignTask` checks existing `assignedTo` before appending and returns 409 on overlap.
-- **Deactivated user guard** — `assignTask` reads the user record and rejects assignment if `status !== "ACTIVE"`.
-- **DynamoDB PITR** — point-in-time recovery enabled on both tables.
-- **S3 state encryption** — Terraform remote state stored with server-side encryption and public access fully blocked.
+All endpoints require a valid Cognito JWT in the `Authorization` header.
 
 ---
 
-## Prerequisites
+## Deployment Guide
 
-1. Terraform >= 1.5.0
-2. Node.js >= 20 and npm
-3. AWS CLI configured with sandbox account credentials (`aws configure`)
-4. A verified SES email address
+### Prerequisites
+
+- Terraform >= 1.5.0
+- Node.js >= 20 and npm
+- AWS CLI configured (`aws configure`)
+- An `@amalitech.com` or `@amalitechtraining.org` email address
 
 ---
-
-## Usage
 
 ### Step 1 — Run tests and build Lambda bundle
 
@@ -219,170 +154,218 @@ All endpoints require a valid Cognito JWT in the `Authorization` header. Request
 cd backend
 npm install
 npm test
-```
-
-![Tests Passing](screenshoots/01-tests-passing.png)
-
-```bash
 npm run build
 ```
 
+Tests must pass with 90%+ coverage across all metrics before deploying.
+
+![Test Coverage](screenshots/01-test-coverage.png)
+
 ---
 
-### Step 3 — Bootstrap the remote backend
+### Step 2 — Bootstrap Terraform remote backend
+
+Creates the S3 bucket and DynamoDB table used to store Terraform state remotely.
 
 ```bash
-cd ../infra/backend
+cd infra/backend
 terraform init
 terraform apply
 ```
 
 Type `yes`.
 
-![Backend Terraform Apply](screenshoots/02-backend-terraform-apply.png)
+![Terraform Backend Apply](screenshots/02-terraform-backend-apply.png)
 
 ---
 
-### Step 4 — Deploy all infrastructure
+### Step 3 — Deploy all infrastructure
 
 ```bash
-cd ..
+cd ../infra
 terraform init
 terraform apply -var="ses_from_email=your@amalitech.com"
 ```
 
-Type `yes`. This creates Cognito, DynamoDB, all Lambdas, API Gateway, and SES identity.
+Type `yes`. This provisions Cognito, DynamoDB, all Lambda functions, API Gateway, and SES identity.
 
-![Main Terraform Apply](screenshoots/03-main-terraform-apply.png)
+![Terraform Main Apply](screenshots/03-terraform-main-apply.png)
 
-Copy the three output values into `frontend/.env`:
+Copy the outputs into `frontend/.env`:
 
+```env
+VITE_USER_POOL_ID=<cognito_user_pool_id>
+VITE_USER_POOL_CLIENT_ID=<cognito_client_id>
+VITE_API_URL=<api_gateway_url>
 ```
-api_gateway_url       = "https://xxxxxxxxxx.execute-api.eu-west-1.amazonaws.com"
-cognito_user_pool_id  = "eu-west-1_XXXXXXXXX"
-cognito_client_id     = "xxxxxxxxxxxxxxxxxxxxxxxxxx"
-```
-
-![Terraform Outputs](screenshoots/04-terraform-outputs.png)
 
 ---
 
-### Step 5 — Verify resources in AWS Console
+### Step 4 — Verify resources in AWS Console
 
-Cognito User Pool and groups, DynamoDB tables, Lambda functions, API Gateway routes:
+#### API Gateway
+![API Gateway Console](screenshots/04-api-gateway-console.png)
 
-![AWS Resources Overview](screenshoots/05-aws-resources-overview.png)
+#### Cognito User Pool
+![Cognito User Pool](screenshots/05-cognito-user-pool.png)
+
+#### DynamoDB Tables
+![DynamoDB Tables](screenshots/06-dynamodb-tables.png)
+
+#### Lambda Functions
+![Lambda Functions](screenshots/07-lambda-functions.png)
 
 ---
 
-### Step 6 — Verify SES sender email
+### Step 5 — Verify SES sender email
 
-AWS sends a verification email to your `ses_from_email` address. Click the link in your inbox before proceeding.
+AWS sends a verification link to your `ses_from_email` inbox. Click it before proceeding.
 
-![SES Verified Identity](screenshoots/06-ses-verified-identity.png)
+![SES Verified](screenshots/08-ses-verified.png)
+![SES Identity Console](screenshots/09-ses-identity-console.png)
 
 ---
 
-### Step 7 — Configure and run the frontend
+### Step 6 — Start the frontend
 
 ```bash
-cd ../frontend
-cp .env.example .env
-# paste the three terraform output values
+cd frontend
 npm install
 npm run dev
 ```
 
 ---
 
-### Step 8 — Test domain blocking
+### Step 7 — Sign up and verify email
 
-Try to sign up with `test@gmail.com`. Cognito should block it immediately.
+Sign up with your `@amalitech.com` email. Cognito sends a verification code — enter it to confirm your account.
 
-![Signup Blocked](screenshoots/07-signup-blocked.png)
+> **Note:** Signup is blocked for non-approved domains (`@gmail.com`, etc.) by the pre-signup Lambda.
 
----
-
-### Step 9 — Sign up, verify and log in
-
-Sign up with your `@amalitech.com` email, enter the verification code from your inbox, and log in.
-
-![Email Verification and Login](screenshoots/08-email-verification-login.png)
+![Cognito Verification Email](screenshots/10-cognito-verification-email.png)
 
 ---
 
-### Step 10 — Promote to Admin
+### Step 8 — Promote yourself to Admin
+
+After signing in, run the promotion script. It reads the User Pool ID directly from Terraform outputs — no hardcoding needed.
 
 ```bash
-aws cognito-idp admin-add-user-to-group \
-  --user-pool-id <USER_POOL_ID> \
-  --username your@amalitech.com \
-  --group-name Admins
+bash scripts/promote-admin.sh your@amalitech.com
 ```
 
-Refresh the app — you now see the **+ New Task** button.
+Sign out and sign back in for the new group membership to take effect in the JWT token.
 
-![Admin View After Promotion](screenshoots/09-admin-view.png)
-
----
-
-### Step 11 — Create and assign a task
-
-Create a task then assign it to a member using their Cognito `userId`.
-
-![Create and Assign Task](screenshoots/10-create-assign-task.png)
+![Admin Promoted](screenshots/11-admin-promoted.png)
 
 ---
 
-### Step 12 — Assignment email notification
+### Step 9 — Admin dashboard
 
-The assigned member receives an email via SES.
+After signing back in as Admin, you see the **+ New Task** button and the full task list.
 
-![Assignment Email](screenshoots/11-assignment-email.png)
-
----
-
-### Step 13 — Member RBAC view
-
-Log in as the member. They see only their assigned tasks — no admin controls visible.
-
-![Member View](screenshoots/12-member-view.png)
+![Admin Dashboard](screenshots/12-admin-dashboard.png)
 
 ---
 
-### Step 14 — Member updates status and triggers notification
+### Step 10 — Create a task and view the task list
 
-The member updates the task to `IN_PROGRESS`. All other assigned members receive a status-change email.
+Create a task from the **+ New Task** page. It appears in the task list with status `OPEN`.
 
-![Status Update and Email](screenshoots/13-status-update-email.png)
-
----
-
-### Step 15 — Deploy frontend to Amplify
-
-Push to GitHub, connect to Amplify, add the three env vars, deploy.
-
-![Amplify Build](screenshoots/14-amplify-build.png)
-
-Once the build completes, open the Amplify-provided URL in your browser.
-
-![Amplify Live](screenshoots/15-amplify-live.png)
+![Task List](screenshots/13-task-list.png)
 
 ---
 
-### Teardown
+### Step 11 — Assign a member to a task
+
+Open a task and use the **Assign Members** checkbox panel to assign one or more members by name.
+
+![Task Detail Assign](screenshots/14-task-detail-assign.png)
+
+---
+
+### Step 12 — Set notification email (SES sandbox workaround)
+
+SES sandbox only delivers to verified email addresses. Run this script to redirect a user's notification emails to a verified personal inbox:
 
 ```bash
-# Destroy main infrastructure first
+bash scripts/set-notification-email.sh user@amalitech.com personal@gmail.com
+```
+
+The script:
+1. Checks if `personal@gmail.com` is already verified in SES
+2. If not, sends a verification email and waits for you to click the link
+3. Looks up the user's `userId` from Cognito using their login email
+4. Updates their DynamoDB record so SES sends notifications there
+
+---
+
+### Step 13 — Assignment notification email
+
+After assigning, the member receives an email notification via SES.
+
+![CloudWatch Notify Logs](screenshots/15-cloudwatch-notify-logs.png)
+![Assignment Email](screenshots/16-assignment-email.png)
+
+---
+
+### Step 14 — Status change notification email
+
+When a member updates the task status, the task creator (admin) and all other assigned members receive a notification email.
+
+![Status Update Email](screenshots/17-status-update-email.png)
+
+---
+
+### Step 15 — Task assigned with member name + task closed
+
+Members are displayed by name in the task detail. Admins can close any open task with the **Close Task** button.
+
+![Task Assigned Member Name](screenshots/18-task-assigned-member-name.png)
+![Task Closed](screenshots/19-task-closed.png)
+
+---
+
+## Scripts
+
+### `scripts/promote-admin.sh`
+
+Promotes a Cognito user to the Admins group. Reads the User Pool ID from Terraform outputs automatically.
+
+```bash
+bash scripts/promote-admin.sh your@amalitech.com
+```
+
+### `scripts/set-notification-email.sh`
+
+Updates where SES notification emails are delivered for a user. Handles SES verification automatically.
+
+```bash
+bash scripts/set-notification-email.sh <cognito-login-email> <notification-email>
+```
+
+**Example:**
+```bash
+bash scripts/set-notification-email.sh member@amalitech.com member.personal@gmail.com
+```
+
+**Why this is needed:** SES sandbox mode only delivers to verified email addresses. Corporate email servers (Exchange/Office 365) also commonly block SES sandbox emails. This script lets you redirect notifications to a personal Gmail that can receive them.
+
+---
+
+## Teardown
+
+Always destroy main infrastructure before the backend — the backend holds the state file.
+
+```bash
+# 1. Destroy main infrastructure
 cd infra
 terraform destroy -var="ses_from_email=your@amalitech.com"
 
-# Then destroy the backend
-cd backend
+# 2. Destroy the Terraform backend
+cd infra/backend
 terraform destroy
 ```
-
-Always destroy main infra before the backend — the backend holds the state file that tracks what exists.
 
 ---
 
@@ -390,31 +373,46 @@ Always destroy main infra before the backend — the backend holds the state fil
 
 ```bash
 cd backend
-npm test
+npm test -- --coverage
 ```
 
-15 tests across 3 suites:
+90%+ coverage across statements, branches, functions, and lines.
 
-| Suite | Tests |
-|-------|-------|
-| `preSignup-test.ts` | Domain allowlist: 2 allowed domains pass, 3 blocked cases |
-| `createTask-test.ts` | RBAC enforcement, input validation, response shape |
-| `updateTask-test.ts` | Admin/member permissions, 404 on missing task, 403 on unassigned |
+| Suite                    | What it covers                                              |
+|--------------------------|-------------------------------------------------------------|
+| `preSignup-test.ts`      | Approved domains pass, non-approved domains throw           |
+| `createTask-test.ts`     | RBAC enforcement, input validation, DynamoDB write          |
+| `updateTask-test.ts`     | Admin full update, member status-only, 403 on unassigned    |
+
+---
+
+## Security
+
+| Control                        | Implementation                                                        |
+|-------------------------------|-----------------------------------------------------------------------|
+| Domain allowlisting            | Pre-signup Lambda throws for non-approved email domains               |
+| Email verification             | Cognito `CONFIRM_WITH_CODE` — unverified users cannot authenticate    |
+| JWT protection                 | API Gateway JWT authorizer rejects all requests without valid token   |
+| Role-based access control      | Lambda reads `cognito:groups` from JWT — cannot be forged by client   |
+| Deactivated user guard         | `assignTask` rejects assignment if `user.status !== "ACTIVE"`         |
+| Duplicate assignment prevention| `assignTask` returns 409 if user already in `assignedTo`              |
+| Soft deletes                   | Tasks set to `CLOSED`, never hard-deleted — preserves audit trail     |
+| Least-privilege IAM            | Lambda role scoped to exact DynamoDB tables, SES send, CloudWatch     |
+| DynamoDB PITR                  | Point-in-time recovery enabled on both tables                         |
+| Remote state encryption        | Terraform state in S3 with SSE and public access blocked              |
 
 ---
 
 ## Key Design Decisions
 
-**Pre-signup Lambda for domain gating** — Cognito's built-in email allowlist only supports exact addresses, not domains. The pre-signup trigger fires before the user record is created, so a rejected user never appears in the user pool at all — no cleanup required.
+**Pre-signup Lambda for domain gating** — Cognito's built-in allowlist only supports exact addresses, not domains. The trigger fires before the user record is created — a rejected user never appears in the pool.
 
-**Soft delete instead of hard delete** — `DELETE /tasks/{taskId}` sets status to `CLOSED` rather than calling `DeleteItem`. This preserves the full task history for audit purposes and avoids any need for restore logic if a task was closed by mistake.
+**postConfirmation Lambda for user sync** — fires after email verification. Writes `userId`, `email`, `name`, `role`, `status` to DynamoDB. This is the source of truth for the notification system.
 
-**Async Lambda invocation for notifications** — `updateTask` and `assignTask` invoke the `notify` Lambda with `InvocationType: "Event"` (fire-and-forget). The API response returns immediately; email delivery happens in the background. This prevents SES latency from degrading the perceived API response time.
+**Async Lambda invocation for notifications** — `assignTask` and `updateTask` invoke `notify` with `InvocationType: "Event"` (fire-and-forget). The API responds immediately; email delivery happens in the background.
 
-**JWT group claims for RBAC** — instead of a DynamoDB lookup on every request to check the user's role, the role is read from `cognito:groups` in the JWT payload. Group membership is managed server-side in Cognito and cannot be forged by the client. No extra DB read per request.
+**JWT group claims for RBAC** — role read from `cognito:groups` in the JWT. No extra DynamoDB read per request. Group membership is managed server-side and cannot be forged.
 
-**esbuild over tsc for Lambda packaging** — esbuild bundles each handler and its imports into a single JS file, reducing cold start time compared to shipping `node_modules`. The `--external:@aws-sdk/*` flag excludes the AWS SDK since it ships with the Lambda runtime.
+**esbuild for Lambda packaging** — bundles each handler into a single JS file. `--external:@aws-sdk/*` excludes the AWS SDK (ships with the runtime), keeping bundles small and cold starts fast.
 
-**PAY_PER_REQUEST billing for DynamoDB** — provisioned capacity requires capacity planning and wastes money when underutilised. PAY_PER_REQUEST scales automatically from 0 to any load and costs nothing when idle — consistent with the serverless cost model of the rest of the stack.
-
-**Single Lambda IAM role** — all functions share one execution role because the policy is already scoped to the minimum permissions needed across all functions. Separate roles per function would add Terraform complexity without a meaningful security improvement at this scale.
+**Soft delete** — `DELETE /tasks/{taskId}` sets status to `CLOSED` rather than `DeleteItem`. Preserves task history and prevents accidental data loss.
