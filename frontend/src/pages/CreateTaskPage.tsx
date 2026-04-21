@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useTheme } from "../context/ThemeContext";
 import type { Task } from "../types";
 
 export default function CreateTaskPage() {
   const navigate = useNavigate();
+  const { darkMode, toggleDark } = useTheme();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
@@ -26,38 +28,61 @@ export default function CreateTaskPage() {
   };
 
   return (
-    <div style={{ maxWidth: 640, margin: "2rem auto", padding: "0 1rem" }}>
-      <button onClick={() => navigate("/")}>← Back</button>
-      <h1>New Task</h1>
-      {error && <p style={{ color: "red" }}>{error}</p>}
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: "1rem" }}>
-          <label>
-            <strong>Title</strong>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-              style={{ display: "block", width: "100%", padding: "0.4rem", marginTop: 4 }}
-            />
-          </label>
-        </div>
-        <div style={{ marginBottom: "1rem" }}>
-          <label>
-            <strong>Description</strong>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              required
-              rows={5}
-              style={{ display: "block", width: "100%", padding: "0.4rem", marginTop: 4 }}
-            />
-          </label>
-        </div>
-        <button type="submit" disabled={saving}>
-          {saving ? "Creating…" : "Create Task"}
+    <>
+      <nav className="navbar">
+        <span className="navbar-brand">Task Management</span>
+        <button className="theme-toggle" onClick={toggleDark} title="Toggle dark mode">
+          {darkMode ? "☀️" : "🌙"}
         </button>
-      </form>
-    </div>
+      </nav>
+
+      <div className="page">
+        <button className="back-link" onClick={() => navigate("/")}>
+          ← Back to tasks
+        </button>
+
+        <div className="card" style={{ maxWidth: 560 }}>
+          <h1 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "1.5rem" }}>
+            New Task
+          </h1>
+
+          {error && <div className="alert alert-error">{error}</div>}
+
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label className="form-label">Title</label>
+              <input
+                className="input"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Enter task title"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Description</label>
+              <textarea
+                className="textarea"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe the task…"
+                required
+                rows={5}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? "Creating…" : "Create Task"}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => navigate("/")}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
   );
 }
