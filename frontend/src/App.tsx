@@ -1,6 +1,8 @@
 import { Authenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useState } from "react";
+import { useTheme } from "./context/ThemeContext";
 import TaskListPage from "./pages/TaskListPage";
 import TaskDetailPage from "./pages/TaskDetailPage";
 import CreateTaskPage from "./pages/CreateTaskPage";
@@ -24,9 +26,22 @@ function AuthenticatedApp() {
   );
 }
 
-export default function App() {
+function AuthPage() {
+  const { darkMode, toggleDark } = useTheme();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
   return (
-    <ThemeProvider>
+    <>
+      {!isAuthenticated && (
+        <button
+          className="theme-toggle"
+          onClick={toggleDark}
+          style={{ position: "fixed", top: 16, right: 16, zIndex: 100 }}
+          title="Toggle dark mode"
+        >
+          {darkMode ? "☀️" : "🌙"}
+        </button>
+      )}
       <Authenticator
         signUpAttributes={["name"]}
         formFields={{
@@ -41,8 +56,19 @@ export default function App() {
           },
         }}
       >
-        {() => <AuthenticatedApp />}
+        {() => {
+          setIsAuthenticated(true);
+          return <AuthenticatedApp />;
+        }}
       </Authenticator>
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AuthPage />
     </ThemeProvider>
   );
 }

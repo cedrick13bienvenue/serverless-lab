@@ -58,6 +58,36 @@ body {
   background: #333 !important;
 }
 
+/* Amplify auth form text colors */
+[data-theme="dark"] [data-amplify-authenticator] [data-amplify-router] {
+  background: #252525 !important;
+  color: #e5e5e5 !important;
+}
+[data-theme="dark"] [data-amplify-authenticator] [data-amplify-router] label,
+[data-theme="dark"] [data-amplify-authenticator] [data-amplify-router] input,
+[data-theme="dark"] [data-amplify-authenticator] [data-amplify-router] h3,
+[data-theme="dark"] [data-amplify-authenticator] [data-amplify-router] p,
+[data-theme="dark"] [data-amplify-authenticator] [data-amplify-router] a,
+[data-theme="dark"] [data-amplify-authenticator] [data-amplify-router] button:not([type="submit"]) {
+  color: #e5e5e5 !important;
+}
+[data-theme="dark"] [data-amplify-authenticator] [data-amplify-router] input {
+  background: #333 !important;
+  border-color: #444 !important;
+  color: #e5e5e5 !important;
+}
+[data-theme="dark"] [data-amplify-authenticator] [data-amplify-router] input::placeholder {
+  color: #888 !important;
+}
+
+[data-theme="light"] [data-amplify-authenticator] [data-amplify-router] label,
+[data-theme="light"] [data-amplify-authenticator] [data-amplify-router] input,
+[data-theme="light"] [data-amplify-authenticator] [data-amplify-router] h3,
+[data-theme="light"] [data-amplify-authenticator] [data-amplify-router] p,
+[data-theme="light"] [data-amplify-authenticator] [data-amplify-router] a {
+  color: #1a1a1a !important;
+}
+
 /* Amplify Authenticator override */
 [data-amplify-authenticator] {
   min-height: 100vh;
