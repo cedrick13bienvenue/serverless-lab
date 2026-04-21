@@ -11,25 +11,31 @@ interface NotifyEvent {
   event: "TASK_ASSIGNED" | "STATUS_CHANGE";
   assignedTo: string[];
   triggeredBy: string;
+  createdBy?: string;
 }
 
 export const handler = async (event: NotifyEvent): Promise<void> => {
-  const { taskId, event: eventType, assignedTo, triggeredBy } = event;
+  console.log("DEBUG notify event:", JSON.stringify(event));
+  const { taskId, event: eventType, assignedTo, triggeredBy, createdBy } = event;
 
   const taskResult = await dynamo.send(
     new GetCommand({ TableName: TASKS_TABLE, Key: { taskId } })
   );
+  console.log("DEBUG task found:", !!taskResult.Item, "taskId:", taskId);
   if (!taskResult.Item) return;
 
   const task = taskResult.Item as Task;
 
-  const userIds = [...new Set([...assignedTo, triggeredBy])];
+  const userIds = [...new Set([...assignedTo, triggeredBy, ...(createdBy ? [createdBy] : [])])];
+  console.log("DEBUG userIds to fetch:", JSON.stringify(userIds));
+  console.log("DEBUG USERS_TABLE:", USERS_TABLE);
   const users = await fetchUsers(userIds);
+  console.log("DEBUG users map size:", users.size, "keys:", JSON.stringify([...users.keys()]));
 
   if (eventType === "TASK_ASSIGNED") {
     await sendAssignmentEmails(task, assignedTo, users);
   } else if (eventType === "STATUS_CHANGE") {
-    await sendStatusChangeEmails(task, assignedTo, users, triggeredBy);
+    await sendStatusChangeEmails(task, assignedTo, users, triggeredBy, createdBy);
   }
 };
 
@@ -60,8 +66,10 @@ async function sendAssignmentEmails(
 ): Promise<void> {
   for (const userId of assignedTo) {
     const user = users.get(userId);
+    console.log("DEBUG assignment email — userId:", userId, "user found:", !!user, "email:", user?.email);
     if (!user) continue;
 
+    console.log("DEBUG sending SES email to:", user.email, "from:", FROM_EMAIL);
     await ses.send(
       new SendEmailCommand({
         Source: FROM_EMAIL,
@@ -83,10 +91,12 @@ async function sendStatusChangeEmails(
   task: Task,
   assignedTo: string[],
   users: Map<string, User>,
-  triggeredBy: string
+  triggeredBy: string,
+  createdBy?: string
 ): Promise<void> {
-  // Notify all assigned members except the one who made the change
-  const recipients = assignedTo.filter((id) => id !== triggeredBy);
+  // Notify all assigned members + task creator, except the one who made the change
+  const allRecipients = [...new Set([...assignedTo, ...(createdBy ? [createdBy] : [])])];
+  const recipients = allRecipients.filter((id) => id !== triggeredBy);
 
   for (const userId of recipients) {
     const user = users.get(userId);

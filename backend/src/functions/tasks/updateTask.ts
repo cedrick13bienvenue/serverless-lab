@@ -57,7 +57,7 @@ export const handler = async (
         })
       );
 
-      await triggerNotification(taskId, "STATUS_CHANGE", task.assignedTo, claims.sub);
+      await triggerNotification(taskId, "STATUS_CHANGE", task.assignedTo, claims.sub, task.createdBy);
 
       return ok(updated.Attributes);
     }
@@ -89,7 +89,7 @@ export const handler = async (
     );
 
     if (status && status !== task.status) {
-      await triggerNotification(taskId, "STATUS_CHANGE", task.assignedTo, claims.sub);
+      await triggerNotification(taskId, "STATUS_CHANGE", task.assignedTo, claims.sub, task.createdBy);
     }
 
     return ok(updated.Attributes);
@@ -103,13 +103,14 @@ async function triggerNotification(
   taskId: string,
   event: string,
   assignedTo: string[],
-  triggeredBy: string
+  triggeredBy: string,
+  createdBy?: string
 ): Promise<void> {
   await lambda.send(
     new InvokeCommand({
       FunctionName: `task-mgmt-notify`,
       InvocationType: "Event",
-      Payload: Buffer.from(JSON.stringify({ taskId, event, assignedTo, triggeredBy })),
+      Payload: Buffer.from(JSON.stringify({ taskId, event, assignedTo, triggeredBy, createdBy })),
     })
   );
 }
