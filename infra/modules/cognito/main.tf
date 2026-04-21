@@ -53,6 +53,9 @@ resource "aws_cognito_user_pool_client" "app" {
     "ALLOW_USER_PASSWORD_AUTH",
   ]
 
+  read_attributes  = ["email", "email_verified", "name"]
+  write_attributes = ["email", "name"]
+
   prevent_user_existence_errors = "ENABLED"
   token_validity_units {
     access_token  = "hours"

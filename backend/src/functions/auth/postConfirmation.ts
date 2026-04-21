@@ -3,7 +3,7 @@ import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { dynamo, USERS_TABLE } from "../../utils/dynamo";
 
 export const handler: PostConfirmationTriggerHandler = async (event) => {
-  const { sub, email } = event.request.userAttributes;
+  const { sub, email, name } = event.request.userAttributes;
 
   await dynamo.send(
     new PutCommand({
@@ -11,6 +11,7 @@ export const handler: PostConfirmationTriggerHandler = async (event) => {
       Item: {
         userId: sub,
         email,
+        name: name ?? email,
         role: "Member",
         status: "ACTIVE",
         createdAt: new Date().toISOString(),
