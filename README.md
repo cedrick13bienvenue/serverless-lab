@@ -324,6 +324,13 @@ Members are displayed by name in the task detail. Admins can close any open task
 ![Task Assigned Member Name](screenshots/18-task-assigned-member-name.png)
 ![Task Closed](screenshots/19-task-closed.png)
 
+### Step 16 — Amplify deployment
+
+Frontend deployed to AWS Amplify. Build completes successfully and the live app is accessible at the Amplify URL.
+
+![Amplify Build Success](screenshots/20-amplify-build-success.png)
+![Amplify Live App](screenshots/21-amplify-live-app.png)
+
 ---
 
 ## Scripts
