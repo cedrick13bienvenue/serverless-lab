@@ -54,6 +54,47 @@ flowchart TD
     Amplify -->|"serves"| Browser
 ```
 
+### User Journey
+
+```mermaid
+flowchart TD
+    Signup["User signs up\nemail + password + full name"]
+    Domain{"Domain allowed?\namalitech.com\namalitechtraining.org"}
+    Blocked["❌ Signup blocked"]
+    Verify["Cognito sends\nverification code to email"]
+    Confirmed["✅ Account confirmed\nsaved to DynamoDB as Member"]
+
+    Login["User logs in\nreceives JWT token"]
+
+    Promote["Admin runs\npromote-admin.sh\nAdds user to Admins group"]
+    AdminJWT["Next login JWT includes\ncognito:groups: Admins"]
+
+    subgraph AdminActions["Admin Actions"]
+        CreateTask["Create task\nPOST /tasks"]
+        AssignTask["Assign members\nPATCH /tasks/id/assign"]
+        CloseTask["Close task\nDELETE /tasks/id\nsoft delete → CLOSED"]
+    end
+
+    subgraph MemberActions["Member Actions"]
+        ViewTasks["View assigned tasks\nGET /tasks"]
+        UpdateStatus["Update status\nIN_PROGRESS or DONE"]
+    end
+
+    AssignEmail["📧 Email to assigned members\nassignment notification"]
+    StatusEmail["📧 Email to creator + members\nstatus change notification"]
+
+    Signup --> Domain
+    Domain -- "❌ no" --> Blocked
+    Domain -- "✅ yes" --> Verify --> Confirmed --> Login
+
+    Login --> MemberActions
+    Login --> Promote --> AdminJWT --> AdminActions
+
+    CreateTask --> AssignTask --> AssignEmail
+    UpdateStatus --> StatusEmail
+    AdminActions --> CloseTask
+```
+
 ---
 
 ## Project Structure
