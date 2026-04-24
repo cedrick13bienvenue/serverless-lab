@@ -13,42 +13,122 @@ A production-grade serverless task management system built on AWS. Teams can cre
 
 ## Architecture
 
-```
-BROWSER (React + Amplify UI)
-│
-│  Amplify Authenticator (Cognito-backed)
-│  ├── Pre-signup Lambda blocks non-approved email domains
-│  ├── Email verification required before first login
-│  └── Role assigned via Cognito group (Admins / Members)
-│
-│  JWT access token in Authorization header on every API call
-│
-▼
-API GATEWAY (HTTP API)
-├── JWT Authorizer → rejects requests without valid Cognito token (401)
-│
-├── POST   /tasks                  → create_task Lambda    (Admin only)
-├── GET    /tasks                  → get_tasks Lambda      (Admin: all | Member: assigned)
-├── GET    /tasks/{taskId}         → get_task Lambda       (Admin: any | Member: assigned)
-├── PUT    /tasks/{taskId}         → update_task Lambda    (Admin: full | Member: status only)
-├── PATCH  /tasks/{taskId}/assign  → assign_task Lambda    (Admin only)
-├── DELETE /tasks/{taskId}         → delete_task Lambda    (Admin only — soft close)
-└── GET    /users                  → get_users Lambda      (Admin only)
-              │
-              ▼
-       LAMBDA (Node.js 20 / TypeScript)
-       ├── RBAC checked from JWT claims (cognito:groups)
-       ├── DynamoDB operations (tasks + users tables)
-       └── Async invoke → notify Lambda → SES emails
-              │
-              ▼
-       DYNAMODB (PAY_PER_REQUEST)
-       ├── tasks  — taskId (PK)
-       └── users  — userId (PK)
+### Full Application Flow
 
-       SES (email notifications)
-       ├── TASK_ASSIGNED  → email each newly assigned member
-       └── STATUS_CHANGE  → email task creator + all assigned members (except who changed it)
+```mermaid
+flowchart TD
+    DEV([Developer])
+
+    subgraph DEPLOY["Deployment — done once"]
+        TF_BACKEND["terraform apply\ninfra/backend/\nCreates S3 state bucket\n+ DynamoDB lock table"]
+        TF_MAIN["terraform apply\ninfra/\nCreates all AWS resources"]
+        BUILD["npm run build\nbackend/\nesbuild compiles TypeScript\n→ backend/dist/"]
+        AMPLIFY_CONNECT["Connect GitHub repo\nto AWS Amplify\nSet VITE_* env vars"]
+        AMPLIFY_BUILD["Amplify auto-builds\non every git push\nDeploys to CDN"]
+    end
+
+    DEV --> TF_BACKEND --> TF_MAIN
+    DEV --> BUILD
+    BUILD --> TF_MAIN
+    DEV --> AMPLIFY_CONNECT --> AMPLIFY_BUILD
+
+    subgraph SIGNUP["Step 1 — User Signup"]
+        S1["User fills signup form\nemail + password + full name\non Amplify hosted UI"]
+        S2["Cognito fires\npreSignup Lambda"]
+        S3{"Email domain\nallowed?"}
+        S4["Signup blocked\nError returned to UI"]
+        S5["Cognito sends\n6-digit verification code\nto user's email"]
+        S6["User enters code\nin the UI"]
+        S7["Cognito confirms user\nfires postConfirmation Lambda"]
+        S8["postConfirmation writes\nuser record to DynamoDB\nusers table\nrole=Member, status=ACTIVE"]
+    end
+
+    AMPLIFY_BUILD --> S1
+    S1 --> S2 --> S3
+    S3 -- "❌ not amalitech.com\nor amalitechtraining.org" --> S4
+    S3 -- "✅ allowed domain" --> S5 --> S6 --> S7 --> S8
+
+    subgraph PROMOTE["Step 2 — Promote to Admin"]
+        P1["Run promote-admin.sh\nscripts/promote-admin.sh user@amalitech.com"]
+        P2["Script reads User Pool ID\nfrom terraform output"]
+        P3["AWS CLI call:\nadmin-add-user-to-group\ngroup=Admins"]
+        P4["Next login JWT includes\ncognito:groups: Admins\nUser has admin permissions"]
+    end
+
+    S8 --> P1 --> P2 --> P3 --> P4
+
+    subgraph LOGIN["Step 3 — Login & Token Flow"]
+        L1["User logs in\nemail + password"]
+        L2["Cognito validates\ncredentials via SRP"]
+        L3["Cognito issues 3 tokens\nAccess Token — 1hr\nID Token — 1hr\nRefresh Token — 30 days"]
+        L4["Frontend stores tokens\nAmplify SDK handles\nauto-refresh silently"]
+    end
+
+    P4 --> L1 --> L2 --> L3 --> L4
+
+    subgraph API_FLOW["Step 4 — Every API Call"]
+        A1["Frontend sends\nHTTP request +\nAuthorization: Bearer token"]
+        A2["API Gateway\nJWT Authorizer\nverifies token signature\nagainst Cognito public keys"]
+        A3{"Token valid?"}
+        A4["401 Unauthorized\nreturned to browser"]
+        A5["Lambda invoked\nwith verified claims\nin event context"]
+        A6["Lambda reads\ncognito:groups claim\nfrom JWT — no extra DB lookup"]
+    end
+
+    L4 --> A1 --> A2 --> A3
+    A3 -- "❌ expired / tampered" --> A4
+    A3 -- "✅ valid" --> A5 --> A6
+
+    subgraph TASKS["Step 5 — Task Operations"]
+        T1["Admin: POST /tasks\ncreatTask Lambda\nWrites task to DynamoDB\nstatus=OPEN"]
+        T2["Admin: PATCH /tasks/id/assign\nassignTask Lambda\nValidates users are ACTIVE\nPrevents duplicates\nlist_append to assignedTo"]
+        T3["Async Lambda invoke\nInvocationType: Event\nFire and forget"]
+        T4["notify Lambda\nfetches task + users\nfrom DynamoDB\nvia BatchGetItem"]
+        T5["SES sends email\nto each assigned member\nTask assigned notification"]
+        T6["Member: PUT /tasks/id\nupdateTask Lambda\nCan only set status\nIN_PROGRESS or DONE"]
+        T7["Admin: PUT /tasks/id\nfull update\ntitle + description + status"]
+        T8["notify Lambda\nfires STATUS_CHANGE\nemails creator + all members\nexcept who made the change"]
+        T9["Admin: DELETE /tasks/id\ndeleteTask Lambda\nSoft delete — sets\nstatus=CLOSED\nrecord preserved in DB"]
+    end
+
+    A6 --> T1 --> T2 --> T3 --> T4 --> T5
+    A6 --> T6 --> T8
+    A6 --> T7 --> T8
+    A6 --> T9
+
+    subgraph SES_FIX["Optional — SES Sandbox Workaround"]
+        SF1["Run set-notification-email.sh\nuser@amalitech.com personal@gmail.com"]
+        SF2["Script checks if\npersonal email is\nSES-verified"]
+        SF3["Sends SES verification\nto personal email\nWaits for user to click link"]
+        SF4["Looks up userId\nfrom Cognito using\ncorporate email"]
+        SF5["Updates email field\nin DynamoDB users table\nto personal address"]
+        SF6["All future notifications\ndelivered to Gmail\nbypassing corporate filters"]
+    end
+
+    T5 -.->|"corporate email\nblocked by SPF/DKIM"| SF1
+    SF1 --> SF2 --> SF3 --> SF4 --> SF5 --> SF6
+
+    subgraph INFRA["AWS Infrastructure — always running"]
+        DB_TASKS[("DynamoDB\ntasks table\nPAY_PER_REQUEST\nPITR enabled")]
+        DB_USERS[("DynamoDB\nusers table\nPAY_PER_REQUEST\nPITR enabled")]
+        S3_STATE[("S3 Bucket\nTerraform state\nEncrypted\nVersioned")]
+        CW["CloudWatch Logs\nAPI Gateway access logs\nLambda execution logs\n14 day retention"]
+    end
+
+    T1 & T2 & T6 & T7 & T9 --> DB_TASKS
+    S8 & SF5 --> DB_USERS
+    T4 --> DB_USERS
+    TF_MAIN --> S3_STATE
+    A2 & A5 --> CW
+```
+
+---
+
+### Request Lifecycle Summary
+
+```
+Browser → API Gateway (JWT check) → Lambda (RBAC check) → DynamoDB
+                                                        ↘ Lambda invoke (async) → SES → Email
 ```
 
 ---
